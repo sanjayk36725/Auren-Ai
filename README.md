@@ -1,6 +1,6 @@
 # Auren AI
 
-Auren is a Context-Aware Conversational Visual Intelligence Assistant for chat, project analysis and developer workflows. The interface follows the supplied visual reference: warm neutral palette, collapsible navigation, centered composer, model selector, dashboard upload workflow, analysis progress and project cards. The original reference used simulated responses; this implementation replaces those simulations with real server-side provider calls and a safe demo fallback. fileciteturn1file1L1-L8
+Auren is a Context-Aware Conversational Visual Intelligence Assistant for chat, project analysis and developer workflows. The interface follows the supplied visual reference: warm neutral palette, collapsible navigation, centered composer, model selector, dashboard upload workflow, analysis progress and project cards. The original reference used simulated responses; this implementation replaces those simulations with real server-side provider calls and a safe demo fallback.
 
 ## Features
 
