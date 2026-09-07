@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateReply, type Provider } from "@/lib/ai";
 
+const MAX_REQUEST_BYTES = 6_000_000;
 const MAX_FILES = 20;
 const MAX_FILE_BYTES = 500_000;
 const MAX_TOTAL_BYTES = 5_000_000;
@@ -13,6 +14,11 @@ function cleanFileName(value: unknown) {
 
 export async function POST(req: NextRequest) {
   try {
+    const contentLength = Number(req.headers.get("content-length") || 0);
+    if (Number.isFinite(contentLength) && contentLength > MAX_REQUEST_BYTES) {
+      return NextResponse.json({ error: "Request body is too large." }, { status: 413 });
+    }
+
     const body: unknown = await req.json();
     if (!body || typeof body !== "object") {
       return NextResponse.json({ error: "Invalid request body." }, { status: 400 });
