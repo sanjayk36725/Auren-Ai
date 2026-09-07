@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, type ChangeEvent, type CSSProperties } from "react";
 import {
   ArrowUp,
   Bot,
@@ -28,8 +28,14 @@ import {
 
 type FileItem = { name: string; size: number; content?: string };
 type Msg = { role: "user" | "assistant"; text: string; files?: FileItem[] };
-
 type NavItem = readonly [typeof LayoutDashboard, string, string];
+
+type FilePillsProps = {
+  files: FileItem[];
+  centered?: boolean;
+  removable?: boolean;
+  onRemove?: (file: FileItem) => void;
+};
 
 const nav: NavItem[] = [
   [LayoutDashboard, "Home", "home"],
@@ -60,10 +66,29 @@ const projects = [
   { n: "AI Chat Platform", s: "Review", f: "React · Node" },
   { n: "Analytics Tool", s: "Live", f: "Svelte · Go" },
 ];
-
 const allowedSource = /\.(ts|tsx|js|jsx|mjs|cjs|json|css|scss|md|py|html|htm|sql|java|c|cpp|h|hpp|go|rs|php|rb|swift|kt|kts|yaml|yml|xml|txt)$/i;
 const MAX_FILES = 20;
 const MAX_FILE_BYTES = 500_000;
+const ACCEPTED_SOURCE = ".ts,.tsx,.js,.jsx,.mjs,.cjs,.json,.css,.scss,.md,.py,.html,.htm,.sql,.java,.c,.cpp,.h,.hpp,.go,.rs,.php,.rb,.swift,.kt,.kts,.yaml,.yml,.xml,.txt";
+
+function FilePills({ files, centered, removable, onRemove }: FilePillsProps) {
+  if (!files.length) return null;
+  return (
+    <div className="file-list" style={centered ? { justifyContent: "center" } : undefined}>
+      {files.map((file) => (
+        <span className="file" key={`${file.name}-${file.size}`}>
+          {file.name}
+          {file.size > 0 && centered ? ` · ${(file.size / 1024).toFixed(0)} KB` : ""}
+          {removable && onRemove ? <X size={11} onClick={() => onRemove(file)} /> : null}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function SourceInput({ inputRef, onChange }: { inputRef: React.RefObject<HTMLInputElement | null>; onChange: (event: ChangeEvent<HTMLInputElement>) => void }) {
+  return <input ref={inputRef} hidden type="file" multiple accept={ACCEPTED_SOURCE} onChange={onChange} />;
+}
 
 export default function Page() {
   const [dark, setDark] = useState(false);
@@ -82,49 +107,28 @@ export default function Page() {
   const fileRef = useRef<HTMLInputElement>(null);
   const projectRef = useRef<HTMLInputElement>(null);
 
-  const vars = useMemo(
+  const vars = useMemo<Record<string, string>>(
     () =>
       dark
         ? {
-            "--bg": "#1e1d1b",
-            "--sidebar": "#232220",
-            "--panel": "#2a2926",
-            "--border": "#3a3835",
-            "--border-soft": "#333130",
-            "--text": "#ece9e1",
-            "--text2": "#a9a59d",
-            "--text3": "#75716a",
-            "--accent": "#d97757",
-            "--accent-soft": "rgba(217,119,87,.16)",
-            "--shadow": "rgba(0,0,0,.3)",
+            "--bg": "#1e1d1b", "--sidebar": "#232220", "--panel": "#2a2926", "--border": "#3a3835",
+            "--border-soft": "#333130", "--text": "#ece9e1", "--text2": "#a9a59d", "--text3": "#75716a",
+            "--accent": "#d97757", "--accent-soft": "rgba(217,119,87,.16)", "--shadow": "rgba(0,0,0,.3)",
           }
         : {
-            "--bg": "#faf9f6",
-            "--sidebar": "#f0eee5",
-            "--panel": "#fff",
-            "--border": "#e3e0d6",
-            "--border-soft": "#ebe8de",
-            "--text": "#2e2b26",
-            "--text2": "#6b675e",
-            "--text3": "#9a968a",
-            "--accent": "#c2603f",
-            "--accent-soft": "#f1e1d6",
-            "--shadow": "rgba(60,50,40,.08)",
+            "--bg": "#faf9f6", "--sidebar": "#f0eee5", "--panel": "#fff", "--border": "#e3e0d6",
+            "--border-soft": "#ebe8de", "--text": "#2e2b26", "--text2": "#6b675e", "--text3": "#9a968a",
+            "--accent": "#c2603f", "--accent-soft": "#f1e1d6", "--shadow": "rgba(60,50,40,.08)",
           },
     [dark],
   );
 
   async function readFiles(list: FileList | null) {
     if (!list) return [];
-    const selected = Array.from(list).slice(0, MAX_FILES);
     const out: FileItem[] = [];
-    for (const file of selected) {
+    for (const file of Array.from(list).slice(0, MAX_FILES)) {
       if (file.size > MAX_FILE_BYTES) continue;
-      out.push({
-        name: file.name,
-        size: file.size,
-        content: allowedSource.test(file.name) ? await file.text() : undefined,
-      });
+      out.push({ name: file.name, size: file.size, content: allowedSource.test(file.name) ? await file.text() : undefined });
     }
     return out;
   }
@@ -132,13 +136,11 @@ export default function Page() {
   async function send(text?: string) {
     const value = (text ?? input).trim();
     if (!value && !files.length) return;
-    const user: Msg = { role: "user", text: value, files };
-    const nextMessages = [...messages, user];
+    const nextMessages = [...messages, { role: "user" as const, text: value, files }];
     setMessages(nextMessages);
     setInput("");
     setFiles([]);
     setThinking(true);
-
     try {
       const history = nextMessages.map((message) => ({
         role: message.role,
@@ -147,24 +149,12 @@ export default function Page() {
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          messages: history,
-          provider: model.id === "auto" ? undefined : model.id,
-        }),
+        body: JSON.stringify({ messages: history, provider: model.id === "auto" ? undefined : model.id }),
       });
       const data = await response.json();
-      setMessages((current) => [
-        ...current,
-        { role: "assistant", text: data.text || data.error || "No response returned." },
-      ]);
+      setMessages((current) => [...current, { role: "assistant", text: data.text || data.error || "No response returned." }]);
     } catch {
-      setMessages((current) => [
-        ...current,
-        {
-          role: "assistant",
-          text: "Auren could not reach the server. Start the Next.js app and check your provider configuration.",
-        },
-      ]);
+      setMessages((current) => [...current, { role: "assistant", text: "Auren could not reach the server. Start the Next.js app and check your provider configuration." }]);
     } finally {
       setThinking(false);
     }
@@ -177,22 +167,17 @@ export default function Page() {
     setAnalysis(10);
     setAnalysisText("");
     setPage("dashboard");
-
     let progress = 10;
     const timer = setInterval(() => {
       progress = Math.min(100, progress + 18);
       setAnalysis(progress);
       if (progress >= 100) clearInterval(timer);
     }, 350);
-
     try {
       const response = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          files: selected,
-          provider: model.id === "auto" ? undefined : model.id,
-        }),
+        body: JSON.stringify({ files: selected, provider: model.id === "auto" ? undefined : model.id }),
       });
       const data = await response.json();
       setAnalysisText(data.text || data.error || "");
@@ -217,19 +202,15 @@ export default function Page() {
     };
     const [title, desc] = info[page] || info.new;
     const uploadTool = ["new", "analyzer", "bugs", "performance", "ui"].includes(page);
-
     return (
       <div className="dashboard">
-        <div className="card">
-          <div className="serif">{title}</div>
-          <p className="muted">{desc}</p>
-        </div>
+        <div className="card"><div className="serif">{title}</div><p className="muted">{desc}</p></div>
         {uploadTool ? (
           <div className="tool-grid">
             <div className="card tool">
               <h3><Upload size={16} /> Input</h3>
               <p>Choose project files. Text-based source is inspected directly; binary files are retained as metadata.</p>
-              <input ref={projectRef} hidden type="file" multiple accept=".ts,.tsx,.js,.jsx,.json,.css,.scss,.md,.py,.html,.sql,.java,.c,.cpp,.go,.rs,.php,.rb,.swift,.kt,.yaml,.yml,.xml,.txt" onChange={(event) => startAnalysis(event.target.files)} />
+              <SourceInput inputRef={projectRef} onChange={(event) => void startAnalysis(event.target.files)} />
               <button className="primary" onClick={() => projectRef.current?.click()}>Upload files</button>
             </div>
             <div className="card tool">
@@ -238,21 +219,14 @@ export default function Page() {
               <div className="bar"><i style={{ width: `${analysis}%` }} /></div>
             </div>
           </div>
-        ) : (
-          <div className="empty">This workspace is ready for the next project operation.</div>
-        )}
-        {analysisText && (
-          <div className="card">
-            <h3>Latest analysis</h3>
-            <div className="codebox">{analysisText}</div>
-          </div>
-        )}
+        ) : <div className="empty">This workspace is ready for the next project operation.</div>}
+        {analysisText && <div className="card"><h3>Latest analysis</h3><div className="codebox">{analysisText}</div></div>}
       </div>
     );
   }
 
   return (
-    <div className="app" style={vars as React.CSSProperties}>
+    <div className="app" style={vars as CSSProperties}>
       {side && (
         <aside className="sidebar">
           <div className="brand">
@@ -260,21 +234,12 @@ export default function Page() {
             <div className="tagline">Build. Upload. Evolve.</div>
             {page === "home" && <button className="new-chat" onClick={() => setMessages([])}>＋ New conversation</button>}
           </div>
-          <nav className="nav">
-            {nav.map(([Icon, label, key]) => (
-              <button key={key} className={page === key ? "active" : ""} onClick={() => setPage(key)}><Icon size={15} />{label}</button>
-            ))}
-          </nav>
+          <nav className="nav">{nav.map(([Icon, label, key]) => <button key={key} className={page === key ? "active" : ""} onClick={() => setPage(key)}><Icon size={15} />{label}</button>)}</nav>
           <div className="history">
             <div className="history-label">Recent</div>
-            {["Q3 revenue variance analysis", "Draft vendor renewal email", "Summarize compliance memo", "Onboarding checklist", "Competitive landscape brief"].map((item) => (
-              <button key={item} onClick={() => { setPage("home"); setInput(item); }}><FileText size={13} />{item}</button>
-            ))}
+            {["Q3 revenue variance analysis", "Draft vendor renewal email", "Summarize compliance memo", "Onboarding checklist", "Competitive landscape brief"].map((item) => <button key={item} onClick={() => { setPage("home"); setInput(item); }}><FileText size={13} />{item}</button>)}
           </div>
-          <div className="upgrade">
-            <strong>Project mode</strong>
-            <p>Connect a model key to enable live inference. Without keys, Auren remains usable in local demo mode.</p>
-          </div>
+          <div className="upgrade"><strong>Project mode</strong><p>Connect a model key to enable live inference. Without keys, Auren remains usable in local demo mode.</p></div>
         </aside>
       )}
 
@@ -285,15 +250,9 @@ export default function Page() {
             {page === "home" && (
               <div style={{ position: "relative" }}>
                 <button className="select" onClick={() => setModelOpen(!modelOpen)}>{model.name} <ChevronDown size={13} /></button>
-                {modelOpen && (
-                  <div className="card" style={{ position: "absolute", top: 42, left: 0, width: 260, zIndex: 10, padding: 6 }}>
-                    {models.map((item) => (
-                      <button key={item.id} onClick={() => { setModel(item); setModelOpen(false); }} style={{ display: "block", width: "100%", border: 0, background: item.id === model.id ? "var(--accent-soft)" : "transparent", color: "var(--text)", textAlign: "left", padding: 9, borderRadius: 7 }}>
-                        <b>{item.name}</b><small style={{ display: "block", color: "var(--text2)" }}>{item.desc}</small>
-                      </button>
-                    ))}
-                  </div>
-                )}
+                {modelOpen && <div className="card" style={{ position: "absolute", top: 42, left: 0, width: 260, zIndex: 10, padding: 6 }}>
+                  {models.map((item) => <button key={item.id} onClick={() => { setModel(item); setModelOpen(false); }} style={{ display: "block", width: "100%", border: 0, background: item.id === model.id ? "var(--accent-soft)" : "transparent", color: "var(--text)", textAlign: "left", padding: 9, borderRadius: 7 }}><b>{item.name}</b><small style={{ display: "block", color: "var(--text2)" }}>{item.desc}</small></button>)}
+                </div>}
               </div>
             )}
           </div>
@@ -303,68 +262,33 @@ export default function Page() {
         <section className="content">
           {page === "home" ? (
             <div className="home">
-              <div className="chat">
-                <div className="chat-inner">
-                  {!messages.length && <><div className="hello">Hello, User</div><div className="muted" style={{ marginBottom: 18 }}>I’m Auren. What would you like to build, analyze or understand?</div></>}
-                  {messages.map((message, index) => (
-                    <div className={`message ${message.role}`} key={`${message.role}-${index}`}>
-                      <div className="role">{message.role === "user" ? "You" : "Auren"}</div>
-                      {message.files?.length ? <div className="file-list">{message.files.map((file) => <span className="file" key={`${file.name}-${file.size}`}>{file.name}</span>)}</div> : null}
-                      <div>{message.text}</div>
-                    </div>
-                  ))}
-                  {thinking && <div className="message"><div className="role">Auren</div><div>Thinking…</div></div>}
+              <div className="chat"><div className="chat-inner">
+                {!messages.length && <><div className="hello">Hello, User</div><div className="muted" style={{ marginBottom: 18 }}>I’m Auren. What would you like to build, analyze or understand?</div></>}
+                {messages.map((message, index) => <div className={`message ${message.role}`} key={`${message.role}-${index}`}>
+                  <div className="role">{message.role === "user" ? "You" : "Auren"}</div>
+                  <FilePills files={message.files ?? []} />
+                  <div>{message.text}</div>
+                </div>)}
+                {thinking && <div className="message"><div className="role">Auren</div><div>Thinking…</div></div>}
+              </div></div>
+              <div className="composer-wrap"><div className="composer">
+                <FilePills files={files} removable onRemove={(file) => setFiles((current) => current.filter((item) => item !== file))} />
+                <textarea rows={2} value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(); } }} placeholder="How can I help you today?" />
+                <div className="composer-bottom">
+                  <input ref={fileRef} hidden type="file" multiple accept={ACCEPTED_SOURCE} onChange={async (event) => { const selected = await readFiles(event.target.files); setFiles((current) => [...current, ...selected].slice(0, MAX_FILES)); event.currentTarget.value = ""; }} />
+                  <button className="icon" onClick={() => fileRef.current?.click()}><Paperclip size={17} /></button>
+                  <button className="send" disabled={!input.trim() && !files.length} onClick={() => void send()}><ArrowUp size={16} /></button>
                 </div>
-              </div>
-              <div className="composer-wrap">
-                <div className="composer">
-                  {files.length > 0 && <div className="file-list">{files.map((file) => <span className="file" key={`${file.name}-${file.size}`}>{file.name} <X size={11} onClick={() => setFiles((current) => current.filter((item) => item !== file))} /></span>)}</div>}
-                  <textarea rows={2} value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(); } }} placeholder="How can I help you today?" />
-                  <div className="composer-bottom">
-                    <input ref={fileRef} hidden type="file" multiple accept=".txt,.md,.csv,.json,.ts,.tsx,.js,.jsx,.css,.scss,.py,.html,.sql,.java,.c,.cpp,.go,.rs,.php,.rb,.swift,.kt,.yaml,.yml,.xml" onChange={async (event) => { const selected = await readFiles(event.target.files); setFiles((current) => [...current, ...selected].slice(0, MAX_FILES)); event.currentTarget.value = ""; }} />
-                    <button className="icon" onClick={() => fileRef.current?.click()}><Paperclip size={17} /></button>
-                    <button className="send" disabled={!input.trim() && !files.length} onClick={() => void send()}><ArrowUp size={16} /></button>
-                  </div>
-                </div>
-                <div className="chips">{suggestions.map((suggestion) => <button className="chip" key={suggestion} onClick={() => void send(suggestion)}>{suggestion}</button>)}</div>
-              </div>
+              </div><div className="chips">{suggestions.map((suggestion) => <button className="chip" key={suggestion} onClick={() => void send(suggestion)}>{suggestion}</button>)}</div></div>
             </div>
           ) : page === "dashboard" ? (
             <div className="dashboard">
-              <div className="dash-head">
-                <div><div className="serif">Hello, User</div><div className="muted">What will we build today?</div></div>
-                <button className="primary" onClick={() => projectRef.current?.click()}><Zap size={14} /> Quick action</button>
-              </div>
-              <div className="card">
-                <div className="drop">
-                  <div className="upload-icon"><Upload /></div>
-                  <div className="serif" style={{ fontSize: 20 }}>Upload Your App</div>
-                  <p className="muted">Drop an existing app or project and let Auren inspect its structure, flag issues and suggest improvements.</p>
-                  <input ref={projectRef} hidden type="file" multiple accept=".ts,.tsx,.js,.jsx,.json,.css,.scss,.md,.py,.html,.sql,.java,.c,.cpp,.go,.rs,.php,.rb,.swift,.kt,.yaml,.yml,.xml,.txt" onChange={(event) => startAnalysis(event.target.files)} />
-                  <button className="primary" onClick={() => projectRef.current?.click()}>Upload App</button>
-                  {uploaded.length > 0 && <div className="file-list" style={{ justifyContent: "center" }}>{uploaded.map((file) => <span className="file" key={`${file.name}-${file.size}`}>{file.name} · {(file.size / 1024).toFixed(0)} KB</span>)}</div>}
-                </div>
-              </div>
-              <div className="card">
-                <div className="muted" style={{ marginBottom: 18 }}>AI Workflow</div>
-                <div className="workflow">{["Upload", "Analyze", "Plan", "Enhance", "Deploy"].map((item, index) => <div className={`step ${analysis > index * 20 ? "done" : ""}`} key={item}><b>{analysis > index * 20 ? "✓" : index + 1}</b>{item}</div>)}</div>
-              </div>
-              <div className="card">
-                <div className="serif" style={{ fontSize: 16 }}>Analysis</div>
-                <div className="analysis-grid">
-                  <div className="orb">A</div>
-                  <div>{["Scanning files", "Understanding structure", "Analyzing dependencies", "Identifying improvements", "Generating suggestions"].map((item, index) => { const value = Math.min(100, Math.max(0, analysis - index * 20)); return <div className="progress" key={item}><div className="progress-head"><span>{item}</span><span>{value}%</span></div><div className="bar"><i style={{ width: `${value}%` }} /></div></div>; })}</div>
-                  <div>
-                    <div className="tabs">{["Preview", "Code", "Structure", "Logs"].map((item) => <button className={`tab ${tab === item ? "active" : ""}`} key={item} onClick={() => setTab(item)}>{item}</button>)}</div>
-                    <div className="codebox">{tab === "Preview" ? "Auren project preview ready." : tab === "Code" ? "> src/components/Dashboard.tsx\n> src/app/page.tsx" : tab === "Structure" ? "app/\n  api/\n  components/\n  lib/" : "[auren] analysis pipeline initialized"}</div>
-                  </div>
-                </div>
-              </div>
+              <div className="dash-head"><div><div className="serif">Hello, User</div><div className="muted">What will we build today?</div></div><button className="primary" onClick={() => projectRef.current?.click()}><Zap size={14} /> Quick action</button></div>
+              <div className="card"><div className="drop"><div className="upload-icon"><Upload /></div><div className="serif" style={{ fontSize: 20 }}>Upload Your App</div><p className="muted">Drop an existing app or project and let Auren inspect its structure, flag issues and suggest improvements.</p><SourceInput inputRef={projectRef} onChange={(event) => void startAnalysis(event.target.files)} /><button className="primary" onClick={() => projectRef.current?.click()}>Upload App</button><FilePills files={uploaded} centered /></div></div>
+              <div className="card"><div className="muted" style={{ marginBottom: 18 }}>AI Workflow</div><div className="workflow">{["Upload", "Analyze", "Plan", "Enhance", "Deploy"].map((item, index) => <div className={`step ${analysis > index * 20 ? "done" : ""}`} key={item}><b>{analysis > index * 20 ? "✓" : index + 1}</b>{item}</div>)}</div></div>
+              <div className="card"><div className="serif" style={{ fontSize: 16 }}>Analysis</div><div className="analysis-grid"><div className="orb">A</div><div>{["Scanning files", "Understanding structure", "Analyzing dependencies", "Identifying improvements", "Generating suggestions"].map((item, index) => { const value = Math.min(100, Math.max(0, analysis - index * 20)); return <div className="progress" key={item}><div className="progress-head"><span>{item}</span><span>{value}%</span></div><div className="bar"><i style={{ width: `${value}%` }} /></div></div>; })}</div><div><div className="tabs">{["Preview", "Code", "Structure", "Logs"].map((item) => <button className={`tab ${tab === item ? "active" : ""}`} key={item} onClick={() => setTab(item)}>{item}</button>)}</div><div className="codebox">{tab === "Preview" ? "Auren project preview ready." : tab === "Code" ? "> src/components/Dashboard.tsx\n> src/app/page.tsx" : tab === "Structure" ? "app/\n  api/\n  components/\n  lib/" : "[auren] analysis pipeline initialized"}</div></div></div></div>
               {analysisText && <div className="card"><h3>AI findings</h3><div className="codebox">{analysisText}</div></div>}
-              <div>
-                <div className="serif" style={{ fontSize: 16, marginBottom: 12 }}>Your Projects</div>
-                <div className="projects">{projects.map((project) => <div className="card project" key={project.n}><div className="project-banner" /><div className="project-body"><div className="project-title">{project.n}</div><div className="muted">{project.f}</div><span className="pill">{project.s}</span></div></div>)}</div>
-              </div>
+              <div><div className="serif" style={{ fontSize: 16, marginBottom: 12 }}>Your Projects</div><div className="projects">{projects.map((project) => <div className="card project" key={project.n}><div className="project-banner" /><div className="project-body"><div className="project-title">{project.n}</div><div className="muted">{project.f}</div><span className="pill">{project.s}</span></div></div>)}</div></div>
             </div>
           ) : toolPage()}
         </section>
