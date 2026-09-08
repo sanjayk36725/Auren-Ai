@@ -6,21 +6,22 @@ export type Provider = "openai" | "gemini" | "anthropic" | "groq" | "demo";
 export type ChatMessage = { role: "user" | "assistant" | "system"; content: string };
 
 type ModelAnswer = { provider: Provider; model: string; text: string };
+type ProviderFailure = { provider: Exclude<Provider, "demo">; message: string };
 
 export const providerAvailability = (): Record<Provider, boolean> => ({
-  openai: Boolean(process.env.OPENAI_API_KEY),
-  gemini: Boolean(process.env.GEMINI_API_KEY),
-  anthropic: Boolean(process.env.ANTHROPIC_API_KEY),
-  groq: Boolean(process.env.GROQ_API_KEY),
+  openai: Boolean(process.env.OPENAI_API_KEY?.trim()),
+  gemini: Boolean(process.env.GEMINI_API_KEY?.trim()),
+  anthropic: Boolean(process.env.ANTHROPIC_API_KEY?.trim()),
+  groq: Boolean(process.env.GROQ_API_KEY?.trim()),
   demo: true,
 });
 
 export function chooseProvider(requested?: string): Provider {
   const a = providerAvailability();
-  if (requested === "openai" && a.openai) return "openai";
-  if (requested === "gemini" && a.gemini) return "gemini";
-  if (requested === "anthropic" && a.anthropic) return "anthropic";
-  if (requested === "groq" && a.groq) return "groq";
+  if (requested === "openai") return a.openai ? "openai" : "demo";
+  if (requested === "gemini") return a.gemini ? "gemini" : "demo";
+  if (requested === "anthropic") return a.anthropic ? "anthropic" : "demo";
+  if (requested === "groq") return a.groq ? "groq" : "demo";
   if (a.openai) return "openai";
   if (a.gemini) return "gemini";
   if (a.anthropic) return "anthropic";
@@ -32,14 +33,25 @@ const systemPrompt = `You are Auren, a context-aware conversational visual intel
 
 const synthesisPrompt = `You are Auren's final-answer synthesis engine. Multiple independent AI models answered the same user request. Produce ONE accurate, useful final answer for the user. Compare the candidate answers, keep useful agreement, resolve contradictions using reasoning, remove duplicated or speculative claims, and explicitly mention uncertainty when the models disagree. Do not mention internal orchestration unless it helps explain a disagreement. Never claim that an action was performed when it was only suggested.`;
 
+function providerError(provider: Exclude<Provider, "demo">, error: unknown): ProviderFailure {
+  const status = typeof error === "object" && error !== null && "status" in error ? String((error as { status?: unknown }).status || "") : "";
+  const raw = error instanceof Error ? error.message : "request failed";
+  const message = raw.replace(/Bearer\s+\S+/gi, "Bearer [redacted]").replace(/AIza[\w-]+/g, "[redacted]").replace(/gsk_[\w-]+/g, "[redacted]");
+  return { provider, message: status ? `${message} (HTTP ${status})` : message };
+}
+
 export async function generateReply(messages: ChatMessage[], requested?: string) {
   if (requested && requested !== "auto") {
-    return generateSingleReply(messages, chooseProvider(requested));
+    const provider = chooseProvider(requested);
+    if (provider === "demo") {
+      throw new Error(`${requested} is not configured. Add its API key to .env.local and restart the development server.`);
+    }
+    return generateSingleReply(messages, provider);
   }
 
   const availability = providerAvailability();
-  const configured: Provider[] = ["openai", "gemini", "anthropic", "groq"];
-  const available = configured.filter((provider): provider is Exclude<Provider, "demo"> => availability[provider]);
+  const configured: Array<Exclude<Provider, "demo">> = ["openai", "gemini", "anthropic", "groq"];
+  const available = configured.filter((provider) => availability[provider]);
 
   if (available.length === 0) {
     return generateSingleReply(messages, "demo");
@@ -50,17 +62,28 @@ export async function generateReply(messages: ChatMessage[], requested?: string)
   }
 
   const results = await Promise.allSettled(available.map((provider) => generateSingleReply(messages, provider)));
-  const answers = results
-    .filter((result): result is PromiseFulfilledResult<ModelAnswer> => result.status === "fulfilled")
-    .map((result) => result.value)
-    .filter((answer) => answer.text.trim());
+  const answers: ModelAnswer[] = [];
+  const failures: ProviderFailure[] = [];
+
+  results.forEach((result, index) => {
+    const provider = available[index];
+    if (result.status === "fulfilled" && result.value.text.trim()) {
+      answers.push(result.value);
+    } else if (result.status === "rejected") {
+      failures.push(providerError(provider, result.reason));
+    }
+  });
 
   if (answers.length === 0) {
-    return { provider: "demo" as const, model: "Auren Demo", text: demoReply(messages.at(-1)?.content ?? "") };
+    throw new Error(failures.map((failure) => `${failure.provider}: ${failure.message}`).join(" | ") || "All configured AI providers failed.");
   }
 
   if (answers.length === 1) {
-    return { ...answers[0], mode: "single-provider" as const };
+    return {
+      ...answers[0],
+      mode: "single-provider-fallback" as const,
+      failedProviders: failures,
+    };
   }
 
   try {
@@ -71,6 +94,7 @@ export async function generateReply(messages: ChatMessage[], requested?: string)
       text: synthesis.text,
       mode: "multi-model-synthesis" as const,
       sources: answers.map(({ provider, model }) => ({ provider, model })),
+      failedProviders: failures,
     };
   } catch (error) {
     console.error("Auren synthesis failed", error instanceof Error ? error.message : "unknown error");
@@ -80,6 +104,7 @@ export async function generateReply(messages: ChatMessage[], requested?: string)
       text: fallbackSynthesis(answers),
       mode: "multi-model-fallback" as const,
       sources: answers.map(({ provider, model }) => ({ provider, model })),
+      failedProviders: failures,
     };
   }
 }
@@ -90,7 +115,7 @@ async function generateSingleReply(messages: ChatMessage[], provider: Provider):
   }
 
   if (provider === "openai") {
-    const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, timeout: 45_000 });
     const r = await client.chat.completions.create({
       model: process.env.OPENAI_MODEL || "gpt-4o-mini",
       messages: [{ role: "system", content: systemPrompt }, ...messages],
@@ -121,6 +146,7 @@ async function generateSingleReply(messages: ChatMessage[], provider: Provider):
     const client = new OpenAI({
       apiKey: process.env.GROQ_API_KEY,
       baseURL: "https://api.groq.com/openai/v1",
+      timeout: 45_000,
     });
     const r = await client.chat.completions.create({
       model: process.env.GROQ_MODEL || "llama-3.3-70b-versatile",
@@ -130,7 +156,7 @@ async function generateSingleReply(messages: ChatMessage[], provider: Provider):
     return { provider, model: r.model, text: r.choices[0]?.message?.content || "No response returned." };
   }
 
-  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, timeout: 45_000 });
   const r = await client.messages.create({
     model: process.env.ANTHROPIC_MODEL || "claude-3-5-haiku-latest",
     max_tokens: 2048,
@@ -161,7 +187,7 @@ async function synthesize(messages: ChatMessage[], answers: ModelAnswer[]): Prom
 }
 
 function fallbackSynthesis(answers: ModelAnswer[]) {
-  return `Auren received responses from ${answers.length} AI models. The synthesis model was unavailable, so the strongest available responses are shown below.\n\n${answers
+  return `Auren received responses from ${answers.length} AI models. The synthesis model was unavailable, so the available model responses are shown below.\n\n${answers
     .map((answer) => `### ${answer.provider} (${answer.model})\n${answer.text}`)
     .join("\n\n")}`;
 }
