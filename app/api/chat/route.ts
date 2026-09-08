@@ -37,7 +37,11 @@ export async function POST(req: NextRequest) {
     const result = await generateReply(safe, provider);
     return NextResponse.json(result, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
-    console.error("AI request failed", error instanceof Error ? error.message : "unknown error");
-    return NextResponse.json({ error: "AI request failed. Check your provider configuration." }, { status: 500 });
+    const message = error instanceof Error ? error.message : "AI request failed.";
+    console.error("AI request failed", message);
+    return NextResponse.json(
+      { error: message, hint: "Check .env.local, provider keys, model names, and restart npm run dev after changing environment variables." },
+      { status: 502, headers: { "Cache-Control": "no-store" } },
+    );
   }
 }
