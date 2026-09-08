@@ -22,8 +22,8 @@ export function chooseProvider(requested?: string): Provider {
   if (requested === "gemini") return a.gemini ? "gemini" : "demo";
   if (requested === "anthropic") return a.anthropic ? "anthropic" : "demo";
   if (requested === "groq") return a.groq ? "groq" : "demo";
-  if (a.openai) return "openai";
   if (a.gemini) return "gemini";
+  if (a.openai) return "openai";
   if (a.anthropic) return "anthropic";
   if (a.groq) return "groq";
   return "demo";
@@ -50,16 +50,11 @@ export async function generateReply(messages: ChatMessage[], requested?: string)
   }
 
   const availability = providerAvailability();
-  const configured: Array<Exclude<Provider, "demo">> = ["openai", "gemini", "anthropic", "groq"];
+  const configured: Array<Exclude<Provider, "demo">> = ["gemini", "openai", "anthropic", "groq"];
   const available = configured.filter((provider) => availability[provider]);
 
-  if (available.length === 0) {
-    return generateSingleReply(messages, "demo");
-  }
-
-  if (available.length === 1) {
-    return generateSingleReply(messages, available[0]);
-  }
+  if (available.length === 0) return generateSingleReply(messages, "demo");
+  if (available.length === 1) return generateSingleReply(messages, available[0]);
 
   const results = await Promise.allSettled(available.map((provider) => generateSingleReply(messages, provider)));
   const answers: ModelAnswer[] = [];
@@ -67,11 +62,8 @@ export async function generateReply(messages: ChatMessage[], requested?: string)
 
   results.forEach((result, index) => {
     const provider = available[index];
-    if (result.status === "fulfilled" && result.value.text.trim()) {
-      answers.push(result.value);
-    } else if (result.status === "rejected") {
-      failures.push(providerError(provider, result.reason));
-    }
+    if (result.status === "fulfilled" && result.value.text.trim()) answers.push(result.value);
+    else if (result.status === "rejected") failures.push(providerError(provider, result.reason));
   });
 
   if (answers.length === 0) {
@@ -79,11 +71,7 @@ export async function generateReply(messages: ChatMessage[], requested?: string)
   }
 
   if (answers.length === 1) {
-    return {
-      ...answers[0],
-      mode: "single-provider-fallback" as const,
-      failedProviders: failures,
-    };
+    return { ...answers[0], mode: "single-provider-fallback" as const, failedProviders: failures };
   }
 
   try {
@@ -110,9 +98,7 @@ export async function generateReply(messages: ChatMessage[], requested?: string)
 }
 
 async function generateSingleReply(messages: ChatMessage[], provider: Provider): Promise<ModelAnswer> {
-  if (provider === "demo") {
-    return { provider, model: "Auren Demo", text: demoReply(messages.at(-1)?.content ?? "") };
-  }
+  if (provider === "demo") return { provider, model: "Auren Demo", text: demoReply(messages.at(-1)?.content ?? "") };
 
   if (provider === "openai") {
     const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, timeout: 45_000 });
@@ -126,28 +112,19 @@ async function generateSingleReply(messages: ChatMessage[], provider: Provider):
 
   if (provider === "gemini") {
     const client = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
-    const model = client.getGenerativeModel({
-      model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
-      systemInstruction: systemPrompt,
-    });
+    const modelName = process.env.GEMINI_MODEL || "gemini-3.8-flash";
+    const model = client.getGenerativeModel({ model: modelName, systemInstruction: systemPrompt });
     const history = messages
       .slice(0, -1)
       .filter((m) => m.role !== "system")
-      .map((m) => ({
-        role: m.role === "assistant" ? "model" : "user",
-        parts: [{ text: m.content }],
-      }));
+      .map((m) => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] }));
     const chat = model.startChat({ history });
     const r = await chat.sendMessage(messages.at(-1)?.content || "");
-    return { provider, model: process.env.GEMINI_MODEL || "gemini-2.5-flash", text: r.response.text() };
+    return { provider, model: modelName, text: r.response.text() };
   }
 
   if (provider === "groq") {
-    const client = new OpenAI({
-      apiKey: process.env.GROQ_API_KEY,
-      baseURL: "https://api.groq.com/openai/v1",
-      timeout: 45_000,
-    });
+    const client = new OpenAI({ apiKey: process.env.GROQ_API_KEY, baseURL: "https://api.groq.com/openai/v1", timeout: 45_000 });
     const r = await client.chat.completions.create({
       model: process.env.GROQ_MODEL || "llama-3.3-70b-versatile",
       messages: [{ role: "system", content: systemPrompt }, ...messages],
@@ -161,9 +138,7 @@ async function generateSingleReply(messages: ChatMessage[], provider: Provider):
     model: process.env.ANTHROPIC_MODEL || "claude-3-5-haiku-latest",
     max_tokens: 2048,
     system: systemPrompt,
-    messages: messages
-      .filter((m) => m.role !== "system")
-      .map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
+    messages: messages.filter((m) => m.role !== "system").map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
   });
   const text = r.content.filter((x) => x.type === "text").map((x) => x.text).join("\n");
   return { provider, model: r.model, text };
@@ -171,31 +146,20 @@ async function generateSingleReply(messages: ChatMessage[], provider: Provider):
 
 async function synthesize(messages: ChatMessage[], answers: ModelAnswer[]): Promise<ModelAnswer> {
   const availability = providerAvailability();
-  const synthesizer: Provider = availability.openai ? "openai" : availability.gemini ? "gemini" : availability.groq ? "groq" : "anthropic";
+  const synthesizer: Provider = availability.gemini ? "gemini" : availability.openai ? "openai" : availability.groq ? "groq" : "anthropic";
   const originalQuestion = messages.at(-1)?.content ?? "";
-  const candidateText = answers
-    .map((answer, index) => `MODEL ${index + 1} (${answer.provider}, ${answer.model}):\n${answer.text}`)
-    .join("\n\n---\n\n");
-  const synthesisMessages: ChatMessage[] = [
-    {
-      role: "user",
-      content: `${synthesisPrompt}\n\nUSER REQUEST:\n${originalQuestion}\n\nCANDIDATE ANSWERS:\n${candidateText}`,
-    },
-  ];
+  const candidateText = answers.map((answer, index) => `MODEL ${index + 1} (${answer.provider}, ${answer.model}):\n${answer.text}`).join("\n\n---\n\n");
+  const synthesisMessages: ChatMessage[] = [{ role: "user", content: `${synthesisPrompt}\n\nUSER REQUEST:\n${originalQuestion}\n\nCANDIDATE ANSWERS:\n${candidateText}` }];
   const result = await generateSingleReply(synthesisMessages, synthesizer);
   return { provider: result.provider, model: result.model, text: result.text };
 }
 
 function fallbackSynthesis(answers: ModelAnswer[]) {
-  return `Auren received responses from ${answers.length} AI models. The synthesis model was unavailable, so the available model responses are shown below.\n\n${answers
-    .map((answer) => `### ${answer.provider} (${answer.model})\n${answer.text}`)
-    .join("\n\n")}`;
+  return `Auren received responses from ${answers.length} AI models. The synthesis model was unavailable, so the available model responses are shown below.\n\n${answers.map((answer) => `### ${answer.provider} (${answer.model})\n${answer.text}`).join("\n\n")}`;
 }
 
 function demoReply(input: string) {
   const q = input.toLowerCase();
-  if (q.includes("code") || q.includes("bug") || q.includes("analyz")) {
-    return `Auren Demo Mode is active. I can analyze code, explain errors, and propose fixes. Add an API key in .env.local to enable live model inference.`;
-  }
+  if (q.includes("code") || q.includes("bug") || q.includes("analyz")) return `Auren Demo Mode is active. I can analyze code, explain errors, and propose fixes. Add an API key in .env.local to enable live model inference.`;
   return `Auren Demo Mode is active. Your message was received: “${input.slice(0, 240)}”. Connect OpenAI, Gemini, Anthropic, or Groq in .env.local for live responses.`;
 }
