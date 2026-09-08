@@ -37,9 +37,9 @@ export async function generateReply(messages: ChatMessage[], requested?: string)
     return generateSingleReply(messages, chooseProvider(requested));
   }
 
-  const available: Provider[] = ["openai", "gemini", "anthropic", "groq"].filter(
-    (provider) => providerAvailability()[provider],
-  );
+  const availability = providerAvailability();
+  const configured: Provider[] = ["openai", "gemini", "anthropic", "groq"];
+  const available = configured.filter((provider): provider is Exclude<Provider, "demo"> => availability[provider]);
 
   if (available.length === 0) {
     return generateSingleReply(messages, "demo");
@@ -144,7 +144,8 @@ async function generateSingleReply(messages: ChatMessage[], provider: Provider):
 }
 
 async function synthesize(messages: ChatMessage[], answers: ModelAnswer[]): Promise<ModelAnswer> {
-  const synthesizer = chooseProvider("openai") !== "demo" ? "openai" : chooseProvider("gemini");
+  const availability = providerAvailability();
+  const synthesizer: Provider = availability.openai ? "openai" : availability.gemini ? "gemini" : availability.groq ? "groq" : "anthropic";
   const originalQuestion = messages.at(-1)?.content ?? "";
   const candidateText = answers
     .map((answer, index) => `MODEL ${index + 1} (${answer.provider}, ${answer.model}):\n${answer.text}`)
