@@ -8,7 +8,7 @@ const MAX_FILES = 20;
 const MAX_FILE_CHARS = 30_000;
 
 const taskInstructions: Record<string, string> = {
-  new: "Act as a project planning assistant. Turn the user's project request into a concrete implementation plan with goals, architecture, files/modules, milestones, risks, and the first actions to take.",
+  new: "Act as Auren's general conversational assistant. Answer the user's request directly and helpfully. For complex requests, reason through the problem, state assumptions, and provide concrete next steps. Do not force the response into a project plan unless the user asks for one.",
   templates: "Act as a workflow/template advisor. Based on the user's request, recommend a reusable workflow, explain why it fits, and provide a ready-to-use prompt or checklist.",
   ui: "Act as a senior UI engineer. Turn the user's screen or product request into a production-ready UI specification with layout, components, states, responsive behavior, accessibility, and implementation guidance.",
   bugs: "Act as a debugging specialist. Analyze the supplied problem, error, and code. Identify likely root causes, rank them, and provide concrete fixes and verification steps.",
@@ -27,14 +27,10 @@ export async function POST(req: NextRequest) {
 
     const task = cleanText(body.task, 40);
     const instruction = taskInstructions[task];
-    if (!instruction) {
-      return NextResponse.json({ error: "Unsupported Auren task." }, { status: 400 });
-    }
+    if (!instruction) return NextResponse.json({ error: "Unsupported Auren task." }, { status: 400 });
 
     const prompt = cleanText(body.prompt, MAX_PROMPT_CHARS).trim();
-    if (!prompt) {
-      return NextResponse.json({ error: "A request is required." }, { status: 400 });
-    }
+    if (!prompt) return NextResponse.json({ error: "A request is required." }, { status: 400 });
 
     const provider = readProvider(body.provider);
     if (provider instanceof NextResponse) return provider;
