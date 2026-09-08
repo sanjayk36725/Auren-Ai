@@ -5,7 +5,7 @@ import { ArrowUp, Bot, Bug, Check, ChevronDown, FileText, FolderKanban, Gauge, L
 
 type FileItem = { name: string; size: number; content?: string };
 type Msg = { role: "user" | "assistant"; text: string; files?: FileItem[]; meta?: string };
-type ProviderId = "auto" | "openai" | "gemini" | "anthropic";
+type ProviderId = "auto" | "openai" | "gemini" | "anthropic" | "groq";
 type NavItem = readonly [typeof LayoutDashboard, string, string];
 type Status = { providers: Record<string, boolean>; models: Record<string, string> };
 
@@ -16,7 +16,7 @@ const nav: NavItem[] = [
 ];
 const models: Array<{ id: ProviderId; name: string; desc: string }> = [
   { id: "auto", name: "Auren Auto", desc: "Ask all configured models and synthesize one answer" },
-  { id: "openai", name: "OpenAI", desc: "GPT via OpenAI API" }, { id: "gemini", name: "Google Gemini", desc: "Gemini via Google API" }, { id: "anthropic", name: "Anthropic Claude", desc: "Claude via Anthropic API" },
+  { id: "openai", name: "OpenAI", desc: "GPT via OpenAI API" }, { id: "gemini", name: "Google Gemini", desc: "Gemini via Google API" }, { id: "anthropic", name: "Anthropic Claude", desc: "Claude via Anthropic API" }, { id: "groq", name: "Groq", desc: "Llama via Groq API" },
 ];
 const suggestions = ["Draft an email", "Analyze my code", "Design a UI", "Find bugs", "Improve performance"];
 const allowedSource = /\.(ts|tsx|js|jsx|mjs|cjs|json|css|scss|md|py|html|htm|sql|java|c|cpp|h|hpp|go|rs|php|rb|swift|kt|kts|yaml|yml|xml|txt)$/i;
