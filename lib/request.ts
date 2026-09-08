@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { Provider } from "./ai";
 
-export const ALLOWED_PROVIDERS = new Set<Provider>(["openai", "gemini", "anthropic", "demo"]);
+export const ALLOWED_PROVIDERS = new Set<Provider>(["openai", "gemini", "anthropic", "groq", "demo"]);
 
 export async function readJsonObject(req: NextRequest, maxBytes: number): Promise<Record<string, unknown> | NextResponse> {
   const contentLength = Number(req.headers.get("content-length") || 0);
