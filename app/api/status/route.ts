@@ -7,9 +7,9 @@ export async function GET() {
       providers: providerAvailability(),
       models: {
         openai: process.env.OPENAI_MODEL || "gpt-4o-mini",
-        gemini: process.env.GEMINI_MODEL || "gemini-2.5-flash",
+        gemini: process.env.GEMINI_MODEL || "gemini-3.8-flash",
         anthropic: process.env.ANTHROPIC_MODEL || "claude-3-5-haiku-latest",
-        groq: process.env.GROQ_MODEL || "llama-3.3-70b-versatile",
+        groq: process.env.GROQ_MODEL || "openai/gpt-oss-120b",
       },
     },
     { headers: { "Cache-Control": "no-store" } },
