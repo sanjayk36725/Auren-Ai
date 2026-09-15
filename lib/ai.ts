@@ -126,7 +126,7 @@ async function generateSingleReply(messages: ChatMessage[], provider: Provider):
   if (provider === "groq") {
     const client = new OpenAI({ apiKey: process.env.GROQ_API_KEY, baseURL: "https://api.groq.com/openai/v1", timeout: 45_000 });
     const r = await client.chat.completions.create({
-      model: process.env.GROQ_MODEL || "llama-3.3-70b-versatile",
+      model: process.env.GROQ_MODEL || "openai/gpt-oss-120b",
       messages: [{ role: "system", content: systemPrompt }, ...messages],
       temperature: 0.2,
     });
