@@ -39,8 +39,8 @@ function ResultCard({ title, text, loading }: { title: string; text: string; loa
   return <div className="card result-card"><div className="result-head"><h3>{title}</h3>{loading ? <span className="muted">Working…</span> : <Check size={15} />}</div><div className="result-text">{loading ? "Auren is asking the configured AI model(s), comparing their answers, and preparing the result." : text}</div></div>;
 }
 
-export default function Page() {
-  const [dark, setDark] = useState(false); const [side, setSide] = useState(true); const [page, setPage] = useState("home");
+export default function Page({ initialPage = "home" }: { initialPage?: string }) {
+  const [dark, setDark] = useState(false); const [side, setSide] = useState(true); const [page, setPage] = useState(initialPage);
   const [model, setModel] = useState<ProviderId>("auto"); const [modelOpen, setModelOpen] = useState(false); const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Msg[]>([]); const [thinking, setThinking] = useState(false); const [files, setFiles] = useState<FileItem[]>([]);
   const [analysis, setAnalysis] = useState(0); const [analysisText, setAnalysisText] = useState(""); const [uploaded, setUploaded] = useState<FileItem[]>([]);
