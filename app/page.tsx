@@ -17,7 +17,7 @@ const nav: NavItem[] = [
 const models: Array<{ id: ProviderId; name: string; desc: string }> = [
   { id: "auto", name: "Auren Auto", desc: "Recommended: ask every configured model and synthesize one answer" },
   { id: "gemini", name: "Google Gemini 3.8 Flash", desc: "Primary high-quality reasoning and synthesis model" },
-  { id: "groq", name: "Groq Llama 3.3 70B", desc: "Fast independent second opinion" },
+  { id: "groq", name: "Groq", desc: "Groq model configured in .env.local" },
   { id: "openai", name: "OpenAI", desc: "OpenAI model configured in .env.local" },
   { id: "anthropic", name: "Anthropic Claude", desc: "Claude model configured in .env.local" },
 ];
@@ -73,7 +73,7 @@ export default function Page() {
   }
 
   async function startAnalysis(list: FileList | null) {
-    const selected = await readFiles(list); if (!selected.length) return; setUploaded(selected); setAnalysis(10); setAnalysisText(""); setPage("dashboard");
+    const selected = await readFiles(list); if (!selected.length) return; setUploaded(selected); setAnalysis(10); setAnalysisText("");
     let progress = 10; const timer = window.setInterval(() => { progress = Math.min(90, progress + 16); setAnalysis(progress); }, 350);
     try { const response = await fetch("/api/analyze", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ files:selected, provider:model === "auto" ? undefined : model }) }); const data = await response.json(); setAnalysisText(data.text || data.error || "No analysis returned."); setAnalysis(100); }
     catch { setAnalysisText("Analysis endpoint unavailable. Check the development server and provider configuration."); setAnalysis(100); } finally { window.clearInterval(timer); }
